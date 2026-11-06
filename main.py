@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -17,8 +16,8 @@ from langchain_core.tools import tool
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
-from langchain.agents.middleware import AgentMiddleware, AgentState
 from langgraph_checkpoint_aws import AgentCoreMemorySaver, AgentCoreMemoryStore
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
@@ -96,58 +95,55 @@ def reformulate_query(original_query: str, focus_aspect: str) -> str:
     return format_results(f"{focus_aspect} related to {original_query}", 3)
 
 
-class MemoryMiddleware(AgentMiddleware):
+def load_memory_context(
+    state: dict[str, Any],
+    config: RunnableConfig,
+    *,
+    store: BaseStore,
+) -> dict[str, Any]:
     """Save user turns and add relevant long-term memories to model context."""
+    messages = state.get("messages", [])
+    latest_user_message = next(
+        (message for message in reversed(messages) if isinstance(message, HumanMessage)),
+        None,
+    )
+    if latest_user_message is None:
+        return {"llm_input_messages": messages}
 
-    def pre_model_hook(
-        self,
-        state: AgentState,
-        config: RunnableConfig,
-        *,
-        store: BaseStore,
-    ) -> dict[str, Any]:
-        messages = state.get("messages", [])
-        actor_id = config["configurable"]["actor_id"]
-        latest_user_message = next(
-            (message for message in reversed(messages) if isinstance(message, HumanMessage)),
-            None,
+    actor_id = config["configurable"]["actor_id"]
+    # Store cross-session user context under the actor's preference namespace.
+    if messages and messages[-1] is latest_user_message:
+        store.put(
+            ("preferences", actor_id),
+            os.urandom(16).hex(),
+            {"message": latest_user_message.content},
         )
 
-        if latest_user_message is None:
-            return {"llm_input_messages": messages}
-
-        # Store cross-session user context under the actor's preference namespace.
-        if messages and messages[-1] is latest_user_message:
-            store.put(
-                ("preferences", actor_id),
-                os.urandom(16).hex(),
-                {"message": latest_user_message.content},
-            )
+    try:
+        memories = store.search(
+            ("preferences", actor_id),
+            query=str(latest_user_message.content),
+            limit=5,
+        )
+        memory_context = "\n".join(
+            str(item.value.get("message", ""))
+            for item in memories
+            if item.value.get("message")
+        )
+    except Exception as exc:  # memory retrieval should not block FAQ answers
+        print(f"AgentCore Memory retrieval failed: {exc}")
         memory_context = ""
-        try:
-            memories = store.search(
-                ("preferences", actor_id),
-                query=str(latest_user_message.content),
-                limit=5,
-            )
-            memory_context = "\n".join(
-                str(item.value.get("message", ""))
-                for item in memories
-                if item.value.get("message")
-            )
-        except Exception as exc:  # memory retrieval should not block FAQ answers
-            print(f"AgentCore Memory retrieval failed: {exc}")
 
-        if memory_context:
-            return {
-                "llm_input_messages": [
-                    SystemMessage(
-                        content=f"Relevant context from prior conversations:\n{memory_context}"
-                    ),
-                    *messages,
-                ]
-            }
-        return {"llm_input_messages": messages}
+    if memory_context:
+        return {
+            "llm_input_messages": [
+                SystemMessage(
+                    content=f"Relevant context from prior conversations:\n{memory_context}"
+                ),
+                *messages,
+            ]
+        }
+    return {"llm_input_messages": messages}
 
 
 def build_agent():
@@ -165,13 +161,13 @@ def build_agent():
         api_key=api_key,
         temperature=0,
     )
-    return create_agent(
+    return create_react_agent(
         model=model,
         tools=[search_faq, search_detailed_faq, reformulate_query],
         checkpointer=memory_saver,
         store=memory_store,
-        middleware=[MemoryMiddleware()],
-        system_prompt=(
+        pre_model_hook=load_memory_context,
+        prompt=(
             "You are a telecom FAQ assistant. Search the FAQ knowledge base before "
             "answering questions about services, plans, billing, activation, or support. "
             "Use detailed search or reformulate the query when needed. Answer concisely "
