@@ -1,5 +1,5 @@
 [project]
-name = "agentcore-crash-course"
+name = "agentcore"
 version = "0.1.0"
 description = "LangGraph telecom FAQ assistant deployed on Amazon Bedrock AgentCore"
 readme = "README.md"

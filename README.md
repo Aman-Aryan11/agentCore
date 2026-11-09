@@ -1,12 +1,12 @@
 # Telecom FAQ Assistant with Amazon Bedrock AgentCore
 
-A LangGraph-powered assistant that answers telecom questions from a CSV FAQ. It indexes FAQ entries with Hugging Face sentence embeddings and FAISS, provides semantic search, expanded search, and query reformulation tools, and runs behind Amazon Bedrock AgentCore Runtime. AgentCore Memory preserves conversation state by actor and session and stores user context for retrieval across sessions.
+A LangGraph-powered assistant that answers telecom questions from a CSV FAQ. It indexes FAQ entries with Hugging Face sentence embeddings and FAISS, provides semantic search, expanded search, and query reformulation tools, and runs behind Amazon Bedrock AgentCore Runtime. AgentCore Memory preserves conversation state by actor and session and stores user context for retrieval across sessions. The FAQ data file is excluded from this repository; provide your own data locally.
 
 The language model provider in this implementation is Groq (`openai/gpt-oss-20b` by default). AgentCore provides the runtime and memory services. Configure Groq credentials and AWS credentials separately.
 
 ## Capabilities
 
-- Semantic retrieval over `lauki_qna.csv` with FAISS and `sentence-transformers/all-MiniLM-L6-v2`.
+- Semantic retrieval over a local FAQ CSV with FAISS and `sentence-transformers/all-MiniLM-L6-v2`.
 - Three agent tools: `search_faq`, `search_detailed_faq`, and `reformulate_query`.
 - Amazon Bedrock AgentCore Runtime HTTP entrypoint accepting a `prompt` and optional `actor_id` / `session_id`.
 - AgentCore Memory checkpointing for session continuity and a memory store for cross-session context.
@@ -36,6 +36,8 @@ GROQ_MODEL=openai/gpt-oss-20b
 ```
 
 AWS credentials should be available through the standard AWS SDK credential chain (for example `aws configure`, a profile, or an IAM role). The embedding model is downloaded the first time the application starts. `FAQ_CSV_PATH` and `EMBEDDING_MODEL` can optionally override the defaults.
+
+Provide a UTF-8 CSV with `question` and `answer` columns at `lauki_qna.csv`, or set `FAQ_CSV_PATH` to another local CSV path. FAQ data files are ignored by Git and are not included in this repository.
 
 ## Run locally
 
@@ -72,12 +74,12 @@ The CLI project configuration may need to be initialized for your AWS account an
 ## Project files
 
 - `main.py` - AgentCore Runtime entrypoint, FAQ index, retrieval tools, and memory integration.
-- `lauki_qna.csv` - FAQ knowledge base (75 question and answer entries).
+- Local FAQ CSV - not stored in this repository; provide `question` and `answer` columns as described above.
 - `00_langgraph_agent.py`, `01_agentcore_runtime.py`, `02_agentcore_memory.py` - earlier learning-stage examples retained for reference.
 - `pyproject.toml` / `uv.lock` - Python project dependencies.
 
 ## Notes
 
-- The FAQ source data is sample telecom content for the Lauki Phones scenario. Update the CSV with approved company answers before using the assistant for real customer support.
+- Supply FAQ data with approved company answers before using the assistant for real customer support.
 - The assistant uses Groq for generation; it does not invoke an Amazon Bedrock foundation model. The hosting and memory services are Amazon Bedrock AgentCore.
 - Session history and cross-session memory depend on AgentCore Memory being configured, reachable, and authorized in the selected AWS region.

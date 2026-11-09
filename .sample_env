@@ -1,4 +1,4 @@
-GROQ_API_KEY=your_groq_api_key
+GROQ_API_KEY=
 AGENTCORE_MEMORY_ID=your_agentcore_memory_id
 AWS_REGION=ap-southeast-2
 GROQ_MODEL=openai/gpt-oss-20b
